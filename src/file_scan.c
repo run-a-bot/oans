@@ -2390,7 +2390,7 @@ fail:
 	return -1;
 }
 
-static int open_listed_file(const char *path, bool *not_regular)
+int open_listed_file(const char *path, bool *not_regular)
 {
 	return open_listed(path, O_RDONLY, not_regular);
 }

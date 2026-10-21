@@ -135,6 +135,33 @@ static struct filerec *mkrealfile(char *path, size_t sz)
  * descriptor stays *usable* across the inner close, which is why this reads a
  * byte through it rather than only inspecting the counter.
  */
+MU_TEST(test_filerec_refuses_replaced_special_files) {
+	char path[64];
+	struct filerec *file;
+
+	free_all_filerecs();
+	file = mkrealfile(path, sizeof(path));
+	mu_check(filerec_open(file, true) == 0);
+	mu_check(!(fcntl(file->fd, F_GETFL) & O_NONBLOCK));
+	filerec_close(file);
+	mu_check(unlink(path) == 0);
+	mu_check(symlink("/etc/passwd", path) == 0);
+	mu_check(filerec_open(file, true) == ELOOP);
+	mu_check(file->fd == -1 && file->fd_refs == 0);
+	mu_check(unlink(path) == 0);
+	mu_check(mkfifo(path, 0600) == 0);
+	alarm(2);
+	mu_check(filerec_open(file, true) == EINVAL);
+	alarm(0);
+	mu_check(file->fd == -1 && file->fd_refs == 0);
+	mu_check(unlink(path) == 0);
+	mu_check(mkdir(path, 0700) == 0);
+	mu_check(filerec_open(file, true) == EINVAL);
+	mu_check(file->fd == -1 && file->fd_refs == 0);
+	mu_check(rmdir(path) == 0);
+	free_all_filerecs();
+}
+
 MU_TEST(test_filerec_holds_one_descriptor_however_often_it_is_opened) {
 	char path[64];
 	struct filerec *f;

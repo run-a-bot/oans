@@ -27,6 +27,7 @@
 #include "memstats.h"
 #include "fiemap.h"
 #include "longpath.h"
+#include "file_scan.h"
 
 #include "filerec.h"
 
@@ -267,14 +268,15 @@ int filerec_open(struct filerec *file, bool quiet)
 {
 	int ret = 0;
 	int fd;
+	bool not_regular;
 
 	g_mutex_lock(&filerec_fd_mutex);
 	if (file->fd_refs == 0) {
 		abort_on(file->fd != -1);
 
-		fd = longpath_open(file->filename, O_RDONLY);
+		fd = open_listed_file(file->filename, &not_regular);
 		if (fd == -1) {
-			ret = errno;
+			ret = not_regular ? EINVAL : errno;
 			if (ret != ENOENT || !quiet) {
 				declare_display_path(disp, file->filename);
 

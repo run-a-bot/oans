@@ -19,6 +19,11 @@
  */
 int scan_file(char *name, struct dbhandle *db);
 
+/* Nonblocking, no-follow open of a path previously listed as regular.
+ * On failure, not_regular distinguishes a replacement special file from errno.
+ * Successful descriptors are returned in blocking mode. */
+int open_listed_file(const char *path, bool *not_regular);
+
 /*
  * Parallel directory walk. Bracket the scan_file() seeding calls with
  * filescan_walk_begin()/filescan_walk_run(): begin sets up the walk queues,

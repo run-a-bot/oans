@@ -111,6 +111,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN(test_a_group_is_keyed_on_digest_and_length_together);
 	MU_RUN(test_insert_result_files_a_pair_under_one_length);
 	MU_RUN(test_filerec_holds_one_descriptor_however_often_it_is_opened);
+	MU_RUN(test_filerec_refuses_replaced_special_files);
 	MU_RUN(test_filerec_open_once_opens_each_file_exactly_once);
 	MU_RUN(test_prop_a_filerec_token_is_found_by_its_filerec);
 	MU_RUN(test_whole_file_dupes_load_at_poff_zero);
