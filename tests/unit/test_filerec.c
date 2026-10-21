@@ -135,6 +135,37 @@ static struct filerec *mkrealfile(char *path, size_t sz)
  * descriptor stays *usable* across the inner close, which is why this reads a
  * byte through it rather than only inspecting the counter.
  */
+MU_TEST(test_filerec_refuses_replaced_ancestor_symlinks) {
+	char parent[] = "/tmp/oans-reopen-parent-XXXXXX";
+	char child[128], saved[128], leaf[160];
+	struct filerec *file;
+	int fd;
+
+	free_all_filerecs();
+	mu_check(mkdtemp(parent) != NULL);
+	snprintf(child, sizeof(child), "%s/child", parent);
+	snprintf(saved, sizeof(saved), "%s/saved", parent);
+	snprintf(leaf, sizeof(leaf), "%s/file", child);
+	mu_check(mkdir(child, 0700) == 0);
+	fd = open(leaf, O_CREAT | O_WRONLY, 0600);
+	mu_check(fd >= 0);
+	close(fd);
+	file = filerec_new(leaf, 1, 0);
+	mu_check(file != NULL);
+	mu_check(rename(child, saved) == 0);
+	mu_check(symlink(saved, child) == 0);
+	mu_check(filerec_open(file, true) == ELOOP);
+	mu_check(file->fd == -1 && file->fd_refs == 0);
+	mu_check(longpath_opendir(child) == NULL);
+	mu_check(errno == ELOOP || errno == ENOTDIR);
+	mu_check(unlink(child) == 0);
+	mu_check(rename(saved, child) == 0);
+	mu_check(unlink(leaf) == 0);
+	mu_check(rmdir(child) == 0);
+	mu_check(rmdir(parent) == 0);
+	free_all_filerecs();
+}
+
 MU_TEST(test_filerec_refuses_replaced_special_files) {
 	char path[64];
 	struct filerec *file;

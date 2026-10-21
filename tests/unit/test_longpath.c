@@ -121,6 +121,23 @@ static void lp_check_helpers(const char *absdir, const char *base,
 	mu_check(r == (ssize_t)strlen(contents));
 	mu_check(strcmp(buf, contents) == 0);
 
+	/* No-follow applies to every chunk, including an ancestor whose
+	 * replacement is below the first PATH_MAX boundary. */
+	{
+		char alias[LP_PATH_BUF], redirected[LP_PATH_BUF];
+
+		fd = longpath_open(leaf, O_RDONLY | O_NOFOLLOW);
+		mu_check(fd >= 0);
+		close(fd);
+		snprintf(alias, sizeof(alias), "%s-link", base);
+		mu_check(symlink(base, alias) == 0);
+		snprintf(redirected, sizeof(redirected), "%s-link%s/%s",
+			 base, absdir + strlen(base), victim);
+		fd = longpath_open(redirected, O_RDONLY | O_NOFOLLOW);
+		mu_check(unlink(alias) == 0);
+		mu_check(fd == -1 && errno == ELOOP);
+	}
+
 	/* 2. stat + lstat the deep file. */
 	mu_check(longpath_stat(leaf, &st) == 0);
 	mu_check((size_t)st.st_size == strlen(contents));

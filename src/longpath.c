@@ -15,10 +15,12 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/openat2.h>
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 
 #include "debug.h"
 #include "longpath.h"
@@ -29,6 +31,18 @@
  * anything longer gets ENAMETOOLONG and must be reached via the openat chain.
  */
 #define LONGPATH_MAXLEN	(PATH_MAX - 1)
+
+/* Fail closed on symlinks in every component, including magic links.
+ * A leaf-only O_NOFOLLOW does not protect a concurrently replaced parent. */
+static int open_nofollow(int dirfd, const char *path, int flags)
+{
+	struct open_how how = {
+		.flags = (unsigned int)(flags | O_CLOEXEC),
+		.resolve = RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS,
+	};
+
+	return syscall(SYS_openat2, dirfd, path, &how, sizeof(how));
+}
 
 /* Close fd without disturbing errno (so a preceding failure's errno survives). */
 static void close_keep_errno(int fd)
@@ -74,7 +88,7 @@ static const char *chunk_end(const char *start, const char *end)
 	return memrchr(start, '/', LONGPATH_MAXLEN + 1);
 }
 
-static int open_ancestor(const char *begin, const char *end)
+static int open_ancestor(const char *begin, const char *end, bool nofollow)
 {
 	const char *p = begin;
 	int dfd;
@@ -107,7 +121,9 @@ static int open_ancestor(const char *begin, const char *end)
 		chunk[chunklen] = '\0';
 		p = fit;
 
-		next = openat(dfd, chunk, O_PATH | O_DIRECTORY | O_CLOEXEC);
+		next = nofollow ?
+			open_nofollow(dfd, chunk, O_PATH | O_DIRECTORY | O_CLOEXEC) :
+			openat(dfd, chunk, O_PATH | O_DIRECTORY | O_CLOEXEC);
 		close_keep_errno(dfd);
 		if (next < 0)
 			return -1;
@@ -124,7 +140,7 @@ static int open_ancestor(const char *begin, const char *end)
  * called for over-PATH_MAX absolute paths. Returns the parent dir fd, or -1
  * with errno set.
  */
-static int open_parent_dir(const char *abspath, const char **base_out)
+static int open_parent_dir(const char *abspath, const char **base_out, bool nofollow)
 {
 	const char *slash = strrchr(abspath, '/');
 
@@ -139,7 +155,7 @@ static int open_parent_dir(const char *abspath, const char **base_out)
 		return -1;
 	}
 	*base_out = slash + 1;
-	return open_ancestor(abspath, slash);
+	return open_ancestor(abspath, slash, nofollow);
 }
 
 /* True when abspath can be handled by a single plain syscall (fits, or is a
@@ -161,10 +177,11 @@ static int openat_leaf(const char *abspath, int flags)
 	const char *base;
 	int dfd, fd;
 
-	dfd = open_parent_dir(abspath, &base);
+	dfd = open_parent_dir(abspath, &base, flags & O_NOFOLLOW);
 	if (dfd < 0)
 		return -1;
-	fd = openat(dfd, base, flags);
+	fd = flags & O_NOFOLLOW ? open_nofollow(dfd, base, flags) :
+		openat(dfd, base, flags);
 	close_keep_errno(dfd);
 	return fd;
 }
@@ -172,7 +189,8 @@ static int openat_leaf(const char *abspath, int flags)
 int longpath_open(const char *abspath, int flags)
 {
 	if (fits_one_syscall(abspath))
-		return open(abspath, flags);
+		return flags & O_NOFOLLOW ?
+			open_nofollow(AT_FDCWD, abspath, flags) : open(abspath, flags);
 
 	return openat_leaf(abspath, flags);
 }
@@ -182,10 +200,7 @@ DIR *longpath_opendir(const char *abspath)
 	DIR *dirp;
 	int fd;
 
-	if (fits_one_syscall(abspath))
-		return opendir(abspath);
-
-	fd = openat_leaf(abspath, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	fd = longpath_open(abspath, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 	if (fd < 0)
 		return NULL;
 	dirp = fdopendir(fd);
@@ -208,7 +223,7 @@ static int longpath_statat(const char *abspath, struct stat *st, int atflags)
 	if (fits_one_syscall(abspath))
 		return fstatat(AT_FDCWD, abspath, st, atflags);
 
-	dfd = open_parent_dir(abspath, &base);
+	dfd = open_parent_dir(abspath, &base, false);
 	if (dfd < 0)
 		return -1;
 	ret = fstatat(dfd, base, st, atflags);

@@ -1193,7 +1193,7 @@ static int probe_fs(char *path, struct fs_probe *probe, bool btrfs_only)
 	int ret;
 	_cleanup_(mnt_unref_table_cleanup) struct libmnt_table *tb = NULL;
 	/* O_NONBLOCK: a FIFO root must not block the probe (#281). */
-	_cleanup_(closefd) int fd = longpath_open(path, O_RDONLY | O_NONBLOCK);
+	_cleanup_(closefd) int fd = longpath_open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW);
 	_cleanup_(freep) char *uuid_found = NULL;
 	/* Every message below names the path, and this runs once per root (or
 	 * per fs), not per file - so escape it once here rather than in each

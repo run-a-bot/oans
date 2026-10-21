@@ -53,14 +53,15 @@
  * Like open(abspath, flags), but tolerates strlen(abspath) > PATH_MAX by
  * opening a reachable ancestor and openat-walking the rest (each argument kept
  * <= PATH_MAX). abspath must be absolute; symlinks are followed exactly as
- * open() would (pass O_NOFOLLOW in flags to change that for the final
- * component). Returns an fd on success or -1 with errno set. For paths that fit
- * in PATH_MAX this is exactly open(abspath, flags).
+ * open() would. With O_NOFOLLOW, reject symlinks in every component through
+ * Linux openat2(), including ancestor directories. No fallback follows links
+ * if openat2() is unavailable. Returns an fd on success or -1 with errno set.
  */
 int longpath_open(const char *abspath, int flags);
 
-/* Like opendir(abspath), tolerating strlen(abspath) > PATH_MAX. NULL/errno on
- * failure. For in-range paths this is exactly opendir(abspath). */
+/* Like opendir(abspath), tolerating strlen(abspath) > PATH_MAX, but reject
+ * symlinks in every component. Command-line roots are canonicalized first.
+ * NULL/errno on failure. */
 DIR *longpath_opendir(const char *abspath);
 
 /*
